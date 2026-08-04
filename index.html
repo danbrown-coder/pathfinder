@@ -3,7 +3,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PATHFINDER — the learning layer for a Degla drone fleet (simulated demo)</title>
-<meta name="description" content="A simulated learning layer for natural-language drone fleets: the fleet adapts mid-mission and remembers lessons across missions. A demo concept built for Degla Inc by Dan Brown.">
+<meta name="description" content="One sentence becomes a search-and-rescue mission. The fleet adapts mid-mission, recalls lessons from past fires, and writes new ones at the debrief. A simulated demo concept built for Degla Inc by Dan Brown.">
+<meta property="og:title" content="PATHFINDER — the learning layer for a Degla drone fleet">
+<meta property="og:description" content="One sentence becomes a search-and-rescue mission. The fleet adapts mid-mission, recalls lessons from past fires, and writes new ones at the debrief. Simulated demo, built in a day.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://danbrown-coder.github.io/pathfinder/">
+<meta property="og:image" content="https://danbrown-coder.github.io/pathfinder/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23f7f3ec'/%3E%3Cpath d='M4 3l9 5-9 5z' fill='%23bf4432'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -40,7 +48,9 @@
   .cmdstrip{flex:none; background:var(--cream); border-bottom:1px solid var(--line);
             padding:7px 16px 8px}
   .cmdlab{font-family:var(--sans); font-weight:700; font-size:10px; letter-spacing:.16em;
-          color:var(--hos); text-transform:uppercase}
+          color:var(--hos); text-transform:uppercase; display:flex; align-items:baseline}
+  .cmdnote{margin-left:auto; font-family:var(--serif); font-weight:400; font-style:italic;
+           font-size:11px; letter-spacing:0; color:var(--faint); text-transform:none}
   .cmdline{font-size:15px; font-style:italic; margin-top:2px; min-height:21px; line-height:1.35}
   .caret{display:inline-block; width:7px; height:14px; background:var(--ink); margin-left:2px;
          vertical-align:-2px; animation:blink 1s steps(1) infinite}
@@ -101,6 +111,10 @@
                color:var(--muted); white-space:nowrap; font-weight:600}
   .legend i{display:inline-block; width:8px; height:8px; margin-right:4px; transform:rotate(45deg)}
   .legend .sq{transform:none}
+  #replay{font-family:var(--sans); font-size:9px; font-weight:700; letter-spacing:.1em;
+          color:var(--hos); cursor:pointer; padding:0 14px 0 12px; white-space:nowrap;
+          user-select:none}
+  #replay:hover{text-decoration:underline}
   #mapwrap{flex:1; min-height:0; position:relative}
   #map{width:100%; height:100%; display:block}
   #wfwrap{flex:none; border-top:1px solid var(--line); position:relative; background:#efe8db}
@@ -215,12 +229,18 @@
   @media (max-width:1240px){ main{grid-template-columns:230px 1fr 340px} }
   @media (max-width:980px){
     body{overflow:auto; display:block}
+    header{flex-wrap:wrap; row-gap:2px}
+    .sub{order:9; flex:0 0 100%}
     main{display:flex; flex-direction:column}
-    .rail{display:none}
-    .maparea{min-height:380px}
-    .feedcol{border-left:0; border-top:1px solid var(--line); min-height:420px}
+    .maparea{order:1; min-height:0}
+    #mapwrap{flex:none; height:58.4vw}
+    .rail{order:2; display:block; border-right:0; border-top:1px solid var(--line);
+          overflow-y:visible}
+    #fleeth,#cells{display:none}
+    .feedcol{order:3; border-left:0; border-top:1px solid var(--line); min-height:420px}
     .tiles{grid-template-columns:repeat(2,1fr)}
     .legend{display:none}
+    #replay{margin-left:auto}
   }
 </style>
 
@@ -233,7 +253,8 @@
 </header>
 
 <div class="cmdstrip">
-  <div class="cmdlab">Mission command · natural language</div>
+  <div class="cmdlab">Mission command · natural language
+    <span class="cmdnote">no flight plans · no waypoints · no specialist training</span></div>
   <div class="cmdline"><span id="cmdtext"></span><span class="caret" id="caret"></span></div>
   <div class="chips" id="chips"></div>
 </div>
@@ -273,6 +294,7 @@
         <span><i style="background:var(--mem)"></i>MEMORY</span>
         <span><i class="sq" style="background:#4d6e86"></i>FLEET</span>
       </div>
+      <span id="replay" title="restart the mission from the top">↻ replay</span>
     </div>
     <div id="mapwrap"><svg id="map" viewBox="0 0 960 560" preserveAspectRatio="xMidYMid meet"></svg></div>
     <div id="wfwrap"><canvas id="wf" height="46"></canvas><span class="wl">IR SCAN · FLEET COMPOSITE · 8–14 µm</span><span class="wl" id="wfmode">IR</span></div>
@@ -441,14 +463,16 @@ ta.textContent = 'CEDAR GAP · FICTIONAL TERRAIN';
 el('polygon',{points:'40,330 180,296 340,286 520,296 660,318 700,340 640,356 420,348 200,352 60,348',
   class:'terrain'},gTerrain);
 const rl = el('text',{x:250,y:326,class:'glabel'},gTerrain); rl.textContent = 'REDLINE RIDGE';
-el('polyline',{points:'150,40 230,120 300,180 380,238 420,262 470,300 500,330 560,380 640,430 720,470 830,520 960,548',
+el('path',{d:'M150,40 C210,100 262,146 320,196 C368,238 400,248 432,276 C458,300 476,314 505,338 '+
+  'C545,372 592,404 645,432 C702,462 762,490 830,520 C878,540 920,545 960,548',
   class:'creek'},gTerrain);
 const ck = el('text',{x:238,y:112,class:'glabel'},gTerrain); ck.textContent = 'Bear Creek';
-el('polyline',{points:'190,40 260,120 330,186 410,250 450,292 505,336 585,392 660,440',
+el('path',{d:'M190,40 C246,104 292,152 340,194 C388,236 424,262 452,294 C482,328 534,360 590,396 '+
+  'C614,412 638,426 660,440',
   class:'trail'},gTerrain);
 const ct = el('text',{x:268,y:104,class:'glabel'},gTerrain); ct.textContent = 'Creek Trail';
-const bench = el('polyline',{points:'460,320 380,368 300,412 210,448 130,472',class:'trail',
-  opacity:.55},gTerrain);
+const bench = el('path',{d:'M460,320 C424,346 380,374 330,398 C282,420 220,446 130,472',class:'trail',
+  opacity:.55,fill:'none'},gTerrain);
 const bl = el('text',{x:288,y:430,class:'glabel'},gTerrain); bl.textContent = 'Bench Cutoff';
 el('polyline',{points:'690,70 780,110 900,160',class:'trail',opacity:.5},gTerrain);
 el('rect',{x:106,y:474,width:12,height:12,fill:'#b7ad97'},gTerrain);
@@ -723,6 +747,7 @@ function showTab(name){
 tabs.feed.onclick = () => showTab('feed');
 tabs.plan.onclick = () => showTab('plan');
 tabs.story.onclick = () => showTab('story');
+$('replay').onclick = () => location.reload();
 
 /* ---- escalation cards ---- */
 function escalate(e){
@@ -779,7 +804,8 @@ const B = [
  [800, () => typeCmd()],
  [7000, () => {
    [['ac','6 aircraft'],['lanes','3 sweep lanes · N of ridge'],['prio','priority: Creek Trail 2×'],
-    ['fw','fire watch: 1 orbit'],['relay','comms relay: 1 high'],['pod','POD model: hasty search']]
+    ['fw','fire watch: 1 orbit'],['relay','comms relay: 1 high'],['pod','POD model: hasty search'],
+    ['built','plan built · 4.1 s']]
     .forEach(([id,txt],i) => addChip(id, txt, i*380));
    evt('plan','', 'mission objective parsed → tasking plan built',
      '6 aircraft · 3 sweep lanes north of the ridge · Creek Trail weighted 2× · 1 fire watch · 1 comms relay.');
@@ -800,8 +826,8 @@ const B = [
      'Lanes A–C active; HERON tight on the Creek Trail corridor; OSPREY climbing to relay altitude. Ground team walking in via the Bench Cutoff.');
    addStory('Six aircraft came off the trailhead inside two minutes. Nobody drew a flight plan.'); }],
  [16000, () => { applyLesson('L-87');
-   memMark('300,180 380,238 420,262 470,300 500,330',
-     'L-87 · drainages draw lost hikers downhill', 505, 302);
+   memMark('310,186 380,240 432,276 476,314 505,338',
+     'L-87 · drainages draw lost hikers downhill', 510, 308);
    evt('memory','', 'Lesson 87 · Fire 2026-09 applied — lost hikers trend downhill along drainages',
      'Creek Trail corridor weighted 2×; HERON sweep tightened on the creek bend; POD model updated.');
    PLAN.learned = ['<b>Lesson 87</b> applied — creek corridor weighted 2×, sweep tightened on the bend.'];
@@ -857,7 +883,7 @@ const B = [
  [72000, () => {
    evt('inbound','', 'incident commander (voice-to-text): “Second hiker may have gone for the old mine road.”',
      'parsed → Lane D drawn over the mine road; PLOVER re-tasked; priority weights rebalanced.');
-   addLaneD(); addChip('laned','+ Lane D · mine road');
+   addLaneD(); addChip('laned','+ Lane D · replanned in 3.1 s');
    setTask('PLOVER','sweep · Lane D · mine road');
    sweepTask('PLOVER', serp(712,72,908,188,3), .032);
    addStory('Mid-mission, the incident commander said one sentence over the radio. The fleet redrew its own plan around it in seconds.'); }],
